@@ -125,8 +125,8 @@ impl Round1 {
     pub fn is_expensive(&self) -> bool {
         true
     }
-    pub fn expects_messages(i: u16, n: u16) -> Store<P2PMsgs<(VerifiableSS<GE>, FE)>> {
-        containers::P2PMsgsStore::new(i, n)
+    pub fn expects_messages(i: u16, n: u16) -> Store<BroadcastMsgs<BroadcastPhase1>> {
+        containers::BroadcastMsgsStore::new(i, n)
     }
 }
 
@@ -145,7 +145,7 @@ pub struct Round2 {
 }
 
 impl Round2 {
-    pub fn proceed<O>(self, input: BroadcastMsgs<(VerifiableSS<GE>, FE)>) -> Result<LocalKey> {
+    pub fn proceed(self, input: P2PMsgs<(VerifiableSS<GE>, FE)>) -> Result<LocalKey> {
         let params = party_i::Parameters {
             threshold: self.t.into(),
             share_count: self.n.into(),
@@ -164,6 +164,13 @@ impl Round2 {
             t: self.t,
             n: self.n,
         })
+    }
+
+    pub fn is_expensive(&self) -> bool {
+        true
+    }
+    pub fn expects_messages(i: u16, n: u16) -> Store<P2PMsgs<(VerifiableSS<GE>, FE)>> {
+        containers::P2PMsgsStore::new(i, n)
     }
 }
 

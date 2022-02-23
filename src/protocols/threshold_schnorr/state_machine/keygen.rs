@@ -1,3 +1,7 @@
+use std::fmt;
+use std::mem::replace;
+use std::time::Duration;
+
 use curv::cryptographic_primitives::proofs::sigma_dlog::DLogProof;
 use curv::cryptographic_primitives::secret_sharing::feldman_vss::{
     ShamirSecretSharing, VerifiableSS,
@@ -7,7 +11,10 @@ use curv::elliptic::curves::secp256_k1::GE;
 
 use round_based::containers::push::Push;
 use round_based::containers::{self, BroadcastMsgs, P2PMsgs, Store};
-use round_based::Msg;
+use round_based::containers::*;
+use round_based::{IsCritical, Msg, StateMachine};
+use round_based::containers::push::PushExt;
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -34,6 +41,232 @@ pub struct Keygen {
     party_n: u16,
 }
 
+impl Keygen {
+    /// Constructs a party of keygen protocol
+    ///
+    /// Takes party index `i` (in range `[1; n]`), threshold value `t`, and total number of
+    /// parties `n`. Party index identifies this party in the protocol, so it must be guaranteed
+    /// to be unique.
+    ///
+    /// Returns error if:
+    /// * `n` is less than 2, returns [Error::TooFewParties]
+    /// * `t` is not in range `[1; n-1]`, returns [Error::InvalidThreshold]
+    /// * `i` is not in range `[1; n]`, returns [Error::InvalidPartyIndex]
+    pub fn new(i: u16, t: u16, n: u16) -> Result<Self> {
+        if n < 2 {
+            return Err(Error::TooFewParties);
+        }
+        if t == 0 || t >= n {
+            return Err(Error::InvalidThreshold);
+        }
+        if i == 0 || i > n {
+            return Err(Error::InvalidPartyIndex);
+        }
+        let mut state = Self {
+            round: R::Round0(Round0 {
+                party_i: i,
+                t,
+                n,
+                parties: vec![],
+            }),
+
+            msgs1: Some(Round1::expects_messages(i, n)),
+            msgs2: Some(Round2::expects_messages(i, n)),
+
+            msgs_queue: vec![],
+
+            party_i: i,
+            party_n: n,
+        };
+
+        state.proceed_round(false)?;
+        Ok(state)
+    }
+
+    fn gmap_queue<'a, T, F>(&'a mut self, mut f: F) -> impl Push<Msg<T>> + 'a
+        where
+            F: FnMut(T) -> M + 'a,
+    {
+        (&mut self.msgs_queue).gmap(move |m: Msg<T>| m.map_body(|m| ProtocolMessage(f(m))))
+    }
+
+    /// Proceeds round state if it received enough messages and if it's cheap to compute or
+    /// `may_block == true`
+    fn proceed_round(&mut self, may_block: bool) -> Result<()> {
+        let store1_wants_more = self.msgs1.as_ref().map(|s| s.wants_more()).unwrap_or(false);
+        let store2_wants_more = self.msgs2.as_ref().map(|s| s.wants_more()).unwrap_or(false);
+
+        let next_state: R;
+        let try_again: bool = match replace(&mut self.round, R::Gone) {
+            R::Round0(round) if !round.is_expensive() || may_block => {
+                next_state = round
+                    .proceed(self.gmap_queue(M::Round1))
+                    .map(R::Round1)
+                    .map_err(Error::ProceedRound)?;
+                true
+            }
+            s @ R::Round0(_) => {
+                next_state = s;
+                false
+            }
+            R::Round1(round) if !store1_wants_more && (!round.is_expensive() || may_block) => {
+                let store = self.msgs1.take().ok_or(InternalError::StoreGone)?;
+                let msgs = store
+                    .finish()
+                    .map_err(InternalError::RetrieveRoundMessages)?;
+                next_state = round
+                    .proceed(msgs, self.gmap_queue(M::Round2))
+                    .map(R::Round2)
+                    .map_err(Error::ProceedRound)?;
+                true
+            }
+            s @ R::Round1(_) => {
+                next_state = s;
+                false
+            }
+            R::Round2(round) if !store2_wants_more && (!round.is_expensive() || may_block) => {
+                let store = self.msgs2.take().ok_or(InternalError::StoreGone)?;
+                let msgs = store
+                    .finish()
+                    .map_err(InternalError::RetrieveRoundMessages)?;
+                next_state = round
+                    .proceed(msgs)
+                    .map(R::Final)
+                    .map_err(Error::ProceedRound)?;
+                true
+            }
+            s @ R::Round2(_) => {
+                next_state = s;
+                false
+            }
+            s @ R::Final(_) | s @ R::Gone => {
+                next_state = s;
+                false
+            }
+        };
+
+        self.round = next_state;
+        if try_again {
+            self.proceed_round(may_block)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl StateMachine for Keygen {
+    type MessageBody = ProtocolMessage;
+    type Err = Error;
+    type Output = LocalKey;
+
+    fn handle_incoming(&mut self, msg: Msg<Self::MessageBody>) -> Result<()> {
+        let current_round = self.current_round();
+
+        match msg.body {
+            ProtocolMessage(M::Round1(m)) => {
+                let store = self
+                    .msgs1
+                    .as_mut()
+                    .ok_or(Error::ReceivedOutOfOrderMessage {
+                        current_round,
+                        msg_round: 1,
+                    })?;
+                store
+                    .push_msg(Msg {
+                        sender: msg.sender,
+                        receiver: msg.receiver,
+                        body: m,
+                    })
+                    .map_err(Error::HandleMessage)?;
+                self.proceed_round(false)
+            }
+            ProtocolMessage(M::Round2(m)) => {
+                let store = self
+                    .msgs2
+                    .as_mut()
+                    .ok_or(Error::ReceivedOutOfOrderMessage {
+                        current_round,
+                        msg_round: 2,
+                    })?;
+                store
+                    .push_msg(Msg {
+                        sender: msg.sender,
+                        receiver: msg.receiver,
+                        body: m,
+                    })
+                    .map_err(Error::HandleMessage)?;
+                self.proceed_round(false)
+            }
+        }
+    }
+
+    fn message_queue(&mut self) -> &mut Vec<Msg<Self::MessageBody>> {
+        &mut self.msgs_queue
+    }
+
+    fn wants_to_proceed(&self) -> bool {
+        let store1_wants_more = self.msgs1.as_ref().map(|s| s.wants_more()).unwrap_or(false);
+        let store2_wants_more = self.msgs2.as_ref().map(|s| s.wants_more()).unwrap_or(false);
+
+        match &self.round {
+            R::Round0(_) => true,
+            R::Round1(_) => !store1_wants_more,
+            R::Round2(_) => !store2_wants_more,
+            R::Final(_) | R::Gone => false,
+        }
+    }
+
+    fn proceed(&mut self) -> Result<()> {
+        self.proceed_round(true)
+    }
+
+    fn round_timeout(&self) -> Option<Duration> {
+        None
+    }
+
+    fn round_timeout_reached(&mut self) -> Self::Err {
+        panic!("no timeout was set")
+    }
+
+    fn is_finished(&self) -> bool {
+        matches!(self.round, R::Final(_))
+    }
+
+    fn pick_output(&mut self) -> Option<Result<Self::Output>> {
+        match self.round {
+            R::Final(_) => (),
+            R::Gone => return Some(Err(Error::DoublePickOutput)),
+            _ => return None,
+        }
+
+        match replace(&mut self.round, R::Gone) {
+            R::Final(result) => Some(Ok(result)),
+            _ => unreachable!("guaranteed by match expression above"),
+        }
+    }
+
+    fn current_round(&self) -> u16 {
+        match &self.round {
+            R::Round0(_) => 0,
+            R::Round1(_) => 1,
+            R::Round2(_) => 2,
+            R::Final(_) | R::Gone => 3,
+        }
+    }
+
+    fn total_rounds(&self) -> Option<u16> {
+        Some(2)
+    }
+
+    fn party_ind(&self) -> u16 {
+        self.party_i
+    }
+
+    fn parties(&self) -> u16 {
+        self.party_n
+    }
+}
+
 enum R {
     Round0(Round0),
     Round1(Round1),
@@ -54,4 +287,69 @@ pub struct ProtocolMessage(M);
 enum M {
     Round1(BroadcastPhase1),
     Round2((VerifiableSS<GE>, FE)),
+}
+
+// Error
+
+type Result<T> = std::result::Result<T, Error>;
+
+/// Error type of keygen protocol
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum Error {
+    /// Round proceeding resulted in error
+    #[error("proceed round: {0}")]
+    ProceedRound(#[source] ProceedError),
+
+    /// Too few parties (`n < 2`)
+    #[error("at least 2 parties are required for keygen")]
+    TooFewParties,
+    /// Threshold value `t` is not in range `[1; n-1]`
+    #[error("threshold is not in range [1; n-1]")]
+    InvalidThreshold,
+    /// Party index `i` is not in range `[1; n]`
+    #[error("party index is not in range [1; n]")]
+    InvalidPartyIndex,
+
+    /// Received message didn't pass pre-validation
+    #[error("received message didn't pass pre-validation: {0}")]
+    HandleMessage(#[source] StoreErr),
+    /// Received message which we didn't expect to receive now (e.g. message from previous round)
+    #[error(
+    "didn't expect to receive message from round {msg_round} (being at round {current_round})"
+    )]
+    ReceivedOutOfOrderMessage { current_round: u16, msg_round: u16 },
+    /// [Keygen::pick_output] called twice
+    #[error("pick_output called twice")]
+    DoublePickOutput,
+
+    /// Some internal assertions were failed, which is a bug
+    #[doc(hidden)]
+    #[error("internal error: {0:?}")]
+    InternalError(InternalError),
+}
+
+impl IsCritical for Error {
+    fn is_critical(&self) -> bool {
+        true
+    }
+}
+
+impl From<InternalError> for Error {
+    fn from(err: InternalError) -> Self {
+        Self::InternalError(err)
+    }
+}
+
+use self::private::InternalError;
+mod private {
+    #[derive(Debug)]
+    #[non_exhaustive]
+    pub enum InternalError {
+        /// [Messages store](super::MessageStore) reported that it received all messages it wanted to receive,
+        /// but refused to return message container
+        RetrieveRoundMessages(super::StoreErr),
+        #[doc(hidden)]
+        StoreGone,
+    }
 }
