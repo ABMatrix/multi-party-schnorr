@@ -62,12 +62,15 @@ impl Keygen {
         if i == 0 || i > n {
             return Err(Error::InvalidPartyIndex);
         }
+        let key_gen_parties_points_vec = (0usize..n as usize)
+            .map(|i| i.clone() + 1)
+            .collect::<Vec<usize>>();
         let mut state = Self {
             round: R::Round0(Round0 {
                 party_i: i,
                 t,
                 n,
-                parties: vec![],
+                parties: key_gen_parties_points_vec,
             }),
 
             msgs1: Some(Round1::expects_messages(i, n)),
@@ -405,8 +408,8 @@ mod test {
     }
 
     #[test]
-    fn simulate_keygen_t1_n2() {
-        simulate_keygen(1, 2);
+    fn simulate_keygen_t3_n5() {
+        simulate_keygen(3, 5);
     }
 
     #[test]
