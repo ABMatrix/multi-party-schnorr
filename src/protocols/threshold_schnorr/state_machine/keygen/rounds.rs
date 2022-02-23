@@ -154,7 +154,7 @@ impl Round2 {
         let (a, b): (Vec<VerifiableSS<GE>>, Vec<FE>) = received_data.iter().cloned().unzip();
         let shared_keys = self
             .keys
-            .phase2_verify_vss_construct_keypair(&params, &self.y_vec, &b, &a, &self.index)
+            .phase2_verify_vss_construct_keypair(&params, &self.y_vec, &b, &a, &(self.index+1))
             .map_err(ProceedError::Round2)?;
         Ok(LocalKey {
             shared_keys,
