@@ -18,6 +18,7 @@ type BlindFactor = BigInt;
 type KeyGenCom = party_i::KeyGenBroadcastMessage1;
 type KeyGenDecomn = BlindFactor;
 
+#[derive(Clone)]
 pub struct BroadcastPhase1{
     pub comm: KeyGenCom,
     pub decom: KeyGenDecomn,
@@ -28,13 +29,13 @@ pub struct Round0 {
     pub party_i: u16,
     pub t: u16,
     pub n: u16,
-    pub parties: Vec<u8>,
+    pub parties: Vec<usize>,
 }
 
 impl Round0 {
     pub fn proceed<O>(self, mut output: O) -> Result<Round1>
         where
-            O: Push<Msg<KeyGenCom>>,
+            O: Push<Msg<BroadcastPhase1>>,
     {
         let keys = party_i::Keys::phase1_create(usize::from(self.party_i) - 1);
         let (comm, decom) = keys.phase1_broadcast();
@@ -71,7 +72,7 @@ pub struct Round1 {
     party_i: u16,
     t: u16,
     n: u16,
-    parties: Vec<u8>,
+    parties: Vec<usize>,
 }
 
 impl Round1 {
@@ -79,7 +80,7 @@ impl Round1 {
         self,
         input: BroadcastMsgs<BroadcastPhase1>,
         mut output: O,
-    ) -> Result<Round3>
+    ) -> Result<Round2>
         where
             O: Push<Msg<(VerifiableSS<GE>, FE)>>,
     {
@@ -88,20 +89,16 @@ impl Round1 {
             share_count: self.n.into(),
         };
         let received_decom = input.into_vec_including_me(self.mybroadcast);
-        let sep: Vec<(KeyGenCom,(KeyGenDecomn,GE))> = received_decom.into_iter().map(|BroadcastPhase1{comm,decom,y_i}|{
+        let boardcast_received: Vec<(KeyGenCom, (KeyGenDecomn, GE))> = received_decom.into_iter().map(|BroadcastPhase1{comm,decom,y_i}|{
             (comm,(decom,y_i))
         }).collect();
 
-        let (a, (b, c)): (Vec<KeyGenCom>, (Vec<KeyGenDecomn>, Vec<GE>)) = sep.iter().cloned().unzip();
+        let (a, (b, c)): (Vec<KeyGenCom>, (Vec<KeyGenDecomn>, Vec<GE>)) = boardcast_received.iter().cloned().unzip();
 
         let (vss_scheme, secret_shares, index) = self
             .keys
-            .phase1_verify_com_phase2_distribute(&params,
-                                                 &b,
-                                                 &c,
-                                                 &a,
-                                                 &parties)
-            .map_err(ProceedError::Round2VerifyCommitments)?;
+            .phase1_verify_com_phase2_distribute(&params, &b, &c, &a, &self.parties)
+            .map_err(ProceedError::Round1)?;
         for (i, share) in secret_shares.iter().enumerate() {
             if i + 1 == usize::from(self.party_i) {
                 continue;
@@ -116,9 +113,6 @@ impl Round1 {
 
         Ok(Round2 {
             keys: self.keys,
-
-            y_vec: received_decom.into_iter().map(|d| d.y_i).collect(),
-
             index,
             own_vss: vss_scheme,
             own_share: secret_shares[usize::from(self.party_i - 1)],
@@ -126,17 +120,71 @@ impl Round1 {
             party_i: self.party_i,
             t: self.t,
             n: self.n,
+            parties: self.parties,
+            y_vec:c,
         })
     }
     pub fn is_expensive(&self) -> bool {
         true
     }
-    pub fn expects_messages(i: u16, n: u16) -> Store<BroadcastMsgs<party_i::KeyGenDecom>> {
-        containers::BroadcastMsgsStore::new(i, n)
+    pub fn expects_messages(i: u16, n: u16) -> Store<P2PMsgs<(VerifiableSS<GE>, FE)>> {
+        containers::P2PMsgsStore::new(i, n)
     }
 }
 
+pub struct Round2 {
+    keys: party_i::Keys,
 
+    index: usize,
+    own_vss: VerifiableSS<GE>,
+    own_share: FE,
+
+    party_i: u16,
+    t: u16,
+    n: u16,
+    parties: Vec<usize>,
+    y_vec: Vec<GE>
+}
+
+impl Round2 {
+    pub fn proceed<O>(self, input: BroadcastMsgs<(VerifiableSS<GE>, FE)>, ) -> Result<LocalKey> {
+        let params = party_i::Parameters {
+            threshold: self.t.into(),
+            share_count: self.n.into(),
+        };
+        let received_data = input.into_vec_including_me((self.own_vss,self.own_share));
+        let (a, b): (Vec<VerifiableSS<GE>>, Vec<FE>) = received_data.iter().cloned().unzip();
+        let shared_keys = self.keys
+            .phase2_verify_vss_construct_keypair(&params,&self.y_vec,&b,&a,&self.index)
+            .map_err(ProceedError::Round2)?;
+        Ok(LocalKey{
+            shared_keys,
+            vk_vec: self.y_vec,
+
+            party_i: self.party_i,
+            t: self.t,
+            n: self.n,
+        })
+    }
+}
+
+/// Local secret obtained by party after [keygen](super::Keygen) protocol is completed
+#[derive(Clone, Serialize, Deserialize)]
+pub struct LocalKey {
+    pub shared_keys: party_i::SharedKeys,
+    pub vk_vec: Vec<GE>,
+
+    pub party_i: u16,
+    pub t: u16,
+    pub n: u16,
+}
+
+impl LocalKey {
+    /// Public key of secret shared between parties
+    pub fn public_key(&self) -> GE {
+        self.shared_keys.y
+    }
+}
 
 // Errors
 
@@ -148,10 +196,10 @@ impl Round1 {
     /// every message was received and pre-validated).
     #[derive(Debug, Error)]
     pub enum ProceedError {
-        #[error("round 2: verify commitments: {0:?}")]
-        Round2VerifyCommitments(crate::Error),
-        #[error("round 3: verify vss construction: {0:?}")]
-        Round3VerifyVssConstruct(crate::Error),
-        #[error("round 4: verify dlog proof: {0:?}")]
-        Round4VerifyDLogProof(crate::Error),
+        #[error("round 0: unknown : {0:?}")]
+        Round0(crate::Error),
+        #[error("round 1: verify_com_phase2_distribute : {0:?}")]
+        Round1(crate::Error),
+        #[error("round 2: verify_vss_construct : {0:?}")]
+        Round2(crate::Error),
     }

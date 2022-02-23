@@ -40,6 +40,7 @@ pub struct Keys {
     pub party_index: usize,
 }
 
+#[derive(Clone)]
 pub struct KeyGenBroadcastMessage1 {
     com: BigInt,
 }
