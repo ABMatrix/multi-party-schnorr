@@ -28,6 +28,10 @@ default-features = false
 
 [dev-dependencies]
 hex = "0.3.2"
+criterion = "0.3.3"
+bls_sigs_ref = "0.3.0"
+sha2 = "0.8.0"
+round-based = { version = "0.1.0", features = ["dev"] }
 
 [features]
 default = ["curv/rust-gmp-kzen"]

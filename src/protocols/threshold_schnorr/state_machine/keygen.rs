@@ -267,6 +267,34 @@ impl StateMachine for Keygen {
     }
 }
 
+impl fmt::Debug for Keygen {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let current_round = match &self.round {
+            R::Round0(_) => "0",
+            R::Round1(_) => "1",
+            R::Round2(_) => "2",
+            R::Final(_) => "[Final]",
+            R::Gone => "[Gone]",
+        };
+        let msgs1 = match self.msgs1.as_ref() {
+            Some(msgs) => format!("[{}/{}]", msgs.messages_received(), msgs.messages_total()),
+            None => "[None]".into(),
+        };
+        let msgs2 = match self.msgs2.as_ref() {
+            Some(msgs) => format!("[{}/{}]", msgs.messages_received(), msgs.messages_total()),
+            None => "[None]".into(),
+        };
+        write!(
+            f,
+            "{{MPCRandom at round={} msgs1={} msgs2={} queue=[len={}]}}",
+            current_round,
+            msgs1,
+            msgs2,
+            self.msgs_queue.len()
+        )
+    }
+}
+
 enum R {
     Round0(Round0),
     Round1(Round1),
@@ -351,5 +379,43 @@ mod private {
         RetrieveRoundMessages(super::StoreErr),
         #[doc(hidden)]
         StoreGone,
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use round_based::dev::Simulation;
+
+    use super::*;
+
+    fn simulate_keygen(t: u16, n: u16) -> Vec<LocalKey> {
+        let mut simulation = Simulation::new();
+        simulation.enable_benchmarks(true);
+
+        for i in 1..=n {
+            simulation.add_party(Keygen::new(i, t, n).unwrap());
+        }
+
+        let keys = simulation.run().unwrap();
+
+        println!("Benchmark results:");
+        println!("{:#?}", simulation.benchmark_results().unwrap());
+
+        keys
+    }
+
+    #[test]
+    fn simulate_keygen_t1_n2() {
+        simulate_keygen(1, 2);
+    }
+
+    #[test]
+    fn simulate_keygen_t1_n3() {
+        simulate_keygen(1, 3);
+    }
+
+    #[test]
+    fn simulate_keygen_t2_n3() {
+        simulate_keygen(2, 3);
     }
 }
