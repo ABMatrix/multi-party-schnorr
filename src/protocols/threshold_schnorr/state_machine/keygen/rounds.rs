@@ -18,7 +18,7 @@ type BlindFactor = BigInt;
 type KeyGenCom = party_i::KeyGenBroadcastMessage1;
 type KeyGenDecomn = BlindFactor;
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BroadcastPhase1 {
     pub comm: KeyGenCom,
     pub decom: KeyGenDecomn,
