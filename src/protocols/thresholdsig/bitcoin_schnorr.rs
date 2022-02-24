@@ -172,9 +172,10 @@ impl Keys {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LocalSig {
-    gamma_i: FE,
-    e: FE,
+    pub(crate) gamma_i: FE,
+    pub(crate) e: FE,
 }
 
 impl LocalSig {

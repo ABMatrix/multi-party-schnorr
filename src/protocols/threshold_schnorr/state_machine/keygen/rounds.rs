@@ -136,12 +136,12 @@ pub struct Round2 {
     index: usize,
     own_vss: VerifiableSS<GE>,
     own_share: FE,
+    y_vec: Vec<GE>,
 
     party_i: u16,
     t: u16,
     n: u16,
     parties: Vec<usize>,
-    y_vec: Vec<GE>,
 }
 
 impl Round2 {
@@ -150,7 +150,7 @@ impl Round2 {
             threshold: self.t.into(),
             share_count: self.n.into(),
         };
-        let received_data = input.into_vec_including_me((self.own_vss, self.own_share));
+        let received_data = input.into_vec_including_me((self.own_vss.clone(), self.own_share));
         let (a, b): (Vec<VerifiableSS<GE>>, Vec<FE>) = received_data.iter().cloned().unzip();
         let shared_keys = self
             .keys
@@ -158,7 +158,9 @@ impl Round2 {
             .map_err(ProceedError::Round2)?;
         Ok(LocalKey {
             shared_keys,
+            vss_scheme: self.own_vss,
             vk_vec: self.y_vec,
+            vss_scheme_vec: a,
 
             party_i: self.party_i,
             t: self.t,
@@ -178,7 +180,9 @@ impl Round2 {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct LocalKey {
     pub shared_keys: party_i::SharedKeys,
+    pub vss_scheme: VerifiableSS<GE>,
     pub vk_vec: Vec<GE>,
+    pub vss_scheme_vec: Vec<VerifiableSS<GE>>,
 
     pub party_i: u16,
     pub t: u16,
