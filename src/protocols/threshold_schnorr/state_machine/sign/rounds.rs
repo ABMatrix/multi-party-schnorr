@@ -251,6 +251,10 @@ impl Round3 {
         let vss_ephemeral_keys = self.tmpkey.clone().vss_scheme_vec;
         let i = usize::from(self.party_i) - 1;
 
+        println!("{:?} {:?} ",vss_private_keys.len(),vss_ephemeral_keys.len());
+
+        println!("{:?} {:?} ",vss_private_keys[0].commitments.len(),vss_ephemeral_keys[0].commitments.len());
+
         let mut key_gen_comm_i_vec = (0..vss_private_keys.len())
             .map(|j| vss_private_keys[j].commitments[i].clone() * &gamma_vec[i].e)
             .collect::<Vec<GE>>();
@@ -321,7 +325,7 @@ impl Round4 {
 
         let gamma_i_g = &GE::generator() * &self.local_sig.gamma_i;
         let validate_result = vss_sum
-            .validate_share_public(&gamma_i_g, usize::from(self.party_i) - 1)
+            .validate_share_public(&gamma_i_g, usize::from(self.party_i))
             .is_ok();
 
         output.push(Msg {

@@ -55,7 +55,7 @@ impl Sign {
     /// * `n` is less than 2, returns [Error::TooFewParties]
     /// * `t` is not in range `[1; n-1]`, returns [Error::InvalidThreshold]
     /// * `i` is not in range `[1; n]`, returns [Error::InvalidPartyIndex]
-    pub fn new(message: Vec<u8>, i: u16, n: u16, local_key: LocalKey) -> Result<Self> {
+    pub fn new(message: Vec<u8>, i: u16, t:u16, n: u16, local_key: LocalKey) -> Result<Self> {
         if n < local_key.t + 1 {
             return Err(Error::TooFewParties);
         }
@@ -71,7 +71,7 @@ impl Sign {
                 message,
                 party_i: i,
                 n,
-                t: 0,
+                t,
                 parties: vec![],
             }),
             msgs1: Some(Round1::expects_messages(i, n)),
@@ -546,7 +546,7 @@ mod test {
             .collect();
         let n = s.len() as u16;
         for (i, key) in (1..).zip(parties_keys.clone()) {
-            sign_simulation.add_party(Sign::new(msg.into(), i, n, key).unwrap());
+            sign_simulation.add_party(Sign::new(msg.into(), i, t, n, key).unwrap());
         }
 
         let sigs: Vec<_> = sign_simulation.run().unwrap();
@@ -567,7 +567,7 @@ mod test {
     #[test]
     fn simulate_sign_t1_n2() {
         let msg = b"~~ MESSAGE ~~";
-        simulate_sign(&msg[..], &[1, 2], 1, 2);
+        simulate_sign(&msg[..], &[1, 2, 3], 2, 5);
     }
 
     #[test]
