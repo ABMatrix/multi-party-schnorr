@@ -12,11 +12,11 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::protocols::thresholdsig::bitcoin_schnorr as party_i;
-use curv::BigInt;
 use curv::arithmetic::traits::*;
 use curv::elliptic::curves::traits::*;
+use curv::BigInt;
 
-use crate::protocols::threshold_schnorr::state_machine::keygen::{LocalKey,BroadcastPhase1};
+use crate::protocols::threshold_schnorr::state_machine::keygen::{BroadcastPhase1, LocalKey};
 
 type BlindFactor = BigInt;
 type KeyGenCom = party_i::KeyGenBroadcastMessage1;
@@ -33,8 +33,8 @@ pub struct Round0 {
 
 impl Round0 {
     pub fn proceed<O>(self, mut output: O) -> Result<Round1>
-        where
-            O: Push<Msg<BroadcastPhase1>>,
+    where
+        O: Push<Msg<BroadcastPhase1>>,
     {
         let keys = party_i::Keys::phase1_create(usize::from(self.party_i) - 1);
         let (comm, decom) = keys.phase1_broadcast();
@@ -43,7 +43,7 @@ impl Round0 {
             comm,
             decom,
             y_i: keys.y_i,
-            index: keys.party_index
+            index: keys.party_index,
         };
 
         output.push(Msg {
@@ -82,24 +82,31 @@ pub struct Round1 {
 
 impl Round1 {
     pub fn proceed<O>(self, input: BroadcastMsgs<BroadcastPhase1>, mut output: O) -> Result<Round2>
-        where
-            O: Push<Msg<(VerifiableSS<GE>, FE)>>,
+    where
+        O: Push<Msg<(VerifiableSS<GE>, FE)>>,
     {
         let params = party_i::Parameters {
             threshold: self.t.into(),
             share_count: self.n.into(),
         };
         let received_decom = input.into_vec_including_me(self.mybroadcast);
-        let boardcast_received: Vec<((KeyGenCom, KeyGenDecomn), (GE,usize))> = received_decom
+        let boardcast_received: Vec<((KeyGenCom, KeyGenDecomn), (GE, usize))> = received_decom
             .into_iter()
-            .map(|BroadcastPhase1 { comm, decom, y_i,index }| ((comm, decom), (y_i,index)))
+            .map(
+                |BroadcastPhase1 {
+                     comm,
+                     decom,
+                     y_i,
+                     index,
+                 }| ((comm, decom), (y_i, index)),
+            )
             .collect();
 
-        let ((a, b), (c,d)): ((Vec<KeyGenCom>, Vec<KeyGenDecomn>), (Vec<GE>,Vec<usize>)) =
+        let ((a, b), (c, d)): ((Vec<KeyGenCom>, Vec<KeyGenDecomn>), (Vec<GE>, Vec<usize>)) =
             boardcast_received.iter().cloned().unzip();
 
         let d: Vec<_> = d.into_iter().map(|i| usize::from(i) + 1).collect();
-        println!("{:?}",d);
+        println!("{:?}", d);
 
         let (vss_scheme, secret_shares, index) = self
             .keys
@@ -157,8 +164,8 @@ pub struct Round2 {
 
 impl Round2 {
     pub fn proceed<O>(self, input: P2PMsgs<(VerifiableSS<GE>, FE)>, mut output: O) -> Result<Round3>
-        where
-            O: Push<Msg<party_i::LocalSig>>,
+    where
+        O: Push<Msg<party_i::LocalSig>>,
     {
         let params = party_i::Parameters {
             threshold: self.t.into(),
@@ -168,11 +175,17 @@ impl Round2 {
         let (a, b): (Vec<VerifiableSS<GE>>, Vec<FE>) = received_data.iter().cloned().unzip();
         let shared_keys = self
             .keys
-            .phase2_verify_vss_construct_keypair(&params, &self.y_vec.clone(), &b, &a, &(self.index + 1))
+            .phase2_verify_vss_construct_keypair(
+                &params,
+                &self.y_vec.clone(),
+                &b,
+                &a,
+                &(self.index + 1),
+            )
             .map_err(ProceedError::Round2)?;
 
-        let local_sig = party_i::LocalSig::compute(&self.message,
-                                   &shared_keys, &self.private_key.shared_keys);
+        let local_sig =
+            party_i::LocalSig::compute(&self.message, &shared_keys, &self.private_key.shared_keys);
         output.push(Msg {
             sender: self.party_i,
             receiver: None,
@@ -189,7 +202,7 @@ impl Round2 {
             n: self.n,
         };
         Ok(Round3 {
-            tmpkey:temp_key,
+            tmpkey: temp_key,
             local_sig,
             y_vec: self.y_vec,
 
@@ -224,9 +237,13 @@ pub struct Round3 {
 }
 
 impl Round3 {
-    pub fn proceed<O>(self, input: BroadcastMsgs<party_i::LocalSig>, mut output: O) -> Result<Round4>
-        where
-            O: Push<Msg<GE>>,
+    pub fn proceed<O>(
+        self,
+        input: BroadcastMsgs<party_i::LocalSig>,
+        mut output: O,
+    ) -> Result<Round4>
+    where
+        O: Push<Msg<GE>>,
     {
         let gamma_vec = input.into_vec_including_me(self.local_sig.clone());
 
@@ -253,9 +270,9 @@ impl Round3 {
 
         Ok(Round4 {
             tmpkey: self.tmpkey,
-            local_sig:self.local_sig,
+            local_sig: self.local_sig,
             y_vec: self.y_vec,
-            comm:comm_to_broadcast,
+            comm: comm_to_broadcast,
             local_sig_vec: gamma_vec,
 
             private_key: self.private_key,
@@ -279,7 +296,7 @@ pub struct Round4 {
     tmpkey: LocalKey,
     local_sig: party_i::LocalSig,
     y_vec: Vec<GE>,
-    comm:GE,
+    comm: GE,
     local_sig_vec: Vec<party_i::LocalSig>,
 
     private_key: LocalKey,
@@ -292,8 +309,8 @@ pub struct Round4 {
 
 impl Round4 {
     pub fn proceed<O>(self, input: BroadcastMsgs<GE>, mut output: O) -> Result<Round5>
-        where
-            O: Push<Msg<bool>>,
+    where
+        O: Push<Msg<bool>>,
     {
         let comm_vec = input.into_vec_including_me(self.comm);
 
@@ -304,7 +321,8 @@ impl Round4 {
 
         let gamma_i_g = &GE::generator() * &self.local_sig.gamma_i;
         let validate_result = vss_sum
-            .validate_share_public(&gamma_i_g, usize::from(self.party_i) - 1).is_ok();
+            .validate_share_public(&gamma_i_g, usize::from(self.party_i) - 1)
+            .is_ok();
 
         output.push(Msg {
             sender: self.party_i,
@@ -314,10 +332,10 @@ impl Round4 {
 
         Ok(Round5 {
             tmpkey: self.tmpkey,
-            local_sig:self.local_sig,
+            local_sig: self.local_sig,
             y_vec: self.y_vec,
-            own_result:validate_result,
-            local_sig_vec:self.local_sig_vec,
+            own_result: validate_result,
+            local_sig_vec: self.local_sig_vec,
             vss_sum,
 
             private_key: self.private_key,
@@ -341,8 +359,8 @@ pub struct Round5 {
     tmpkey: LocalKey,
     local_sig: party_i::LocalSig,
     y_vec: Vec<GE>,
-    own_result:bool,
-    local_sig_vec:Vec<party_i::LocalSig>,
+    own_result: bool,
+    local_sig_vec: Vec<party_i::LocalSig>,
     vss_sum: VerifiableSS<GE>,
 
     private_key: LocalKey,
@@ -354,8 +372,7 @@ pub struct Round5 {
 }
 
 impl Round5 {
-    pub fn proceed(self, input: BroadcastMsgs<bool>) -> Result<SigRes>
-    {
+    pub fn proceed(self, input: BroadcastMsgs<bool>) -> Result<SigRes> {
         let params = party_i::Parameters {
             threshold: self.t.into(),
             share_count: self.n.into(),
@@ -363,17 +380,18 @@ impl Round5 {
         let comm_vec = input.into_vec_including_me(self.own_result);
         use Error::InvalidSig;
         let res = comm_vec.iter().all(|x| x.clone() == true);
-        if res == false{
+        if res == false {
             return Err(ProceedError::Round5(InvalidSig));
         }
 
         let signature = party_i::Signature::generate(
-            &self.vss_sum, &self.local_sig_vec,
-            &self.parties, self.tmpkey.public_key());
+            &self.vss_sum,
+            &self.local_sig_vec,
+            &self.parties,
+            self.tmpkey.public_key(),
+        );
 
-        Ok(SigRes {
-            signature
-        })
+        Ok(SigRes { signature })
     }
 
     pub fn is_expensive(&self) -> bool {
@@ -385,7 +403,7 @@ impl Round5 {
 }
 
 #[derive(Clone, PartialEq)]
-pub struct SigRes{
+pub struct SigRes {
     pub signature: party_i::Signature,
 }
 

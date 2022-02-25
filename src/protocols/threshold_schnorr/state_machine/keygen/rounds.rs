@@ -23,7 +23,7 @@ pub struct BroadcastPhase1 {
     pub comm: KeyGenCom,
     pub decom: KeyGenDecomn,
     pub y_i: GE,
-    pub index: usize
+    pub index: usize,
 }
 
 pub struct Round0 {
@@ -45,7 +45,7 @@ impl Round0 {
             comm,
             decom,
             y_i: keys.y_i,
-            index: keys.party_index
+            index: keys.party_index,
         };
 
         output.push(Msg {
@@ -87,16 +87,23 @@ impl Round1 {
             share_count: self.n.into(),
         };
         let received_decom = input.into_vec_including_me(self.mybroadcast);
-        let boardcast_received: Vec<((KeyGenCom, KeyGenDecomn), (GE,usize))> = received_decom
+        let boardcast_received: Vec<((KeyGenCom, KeyGenDecomn), (GE, usize))> = received_decom
             .into_iter()
-            .map(|BroadcastPhase1 { comm, decom, y_i,index }| ((comm, decom), (y_i,index)))
+            .map(
+                |BroadcastPhase1 {
+                     comm,
+                     decom,
+                     y_i,
+                     index,
+                 }| ((comm, decom), (y_i, index)),
+            )
             .collect();
 
-        let ((a, b), (c,d)): ((Vec<KeyGenCom>, Vec<KeyGenDecomn>), (Vec<GE>,Vec<usize>)) =
+        let ((a, b), (c, d)): ((Vec<KeyGenCom>, Vec<KeyGenDecomn>), (Vec<GE>, Vec<usize>)) =
             boardcast_received.iter().cloned().unzip();
 
         let d: Vec<_> = d.into_iter().map(|i| usize::from(i) + 1).collect();
-        println!("{:?}",d);
+        println!("{:?}", d);
         let (vss_scheme, secret_shares, index) = self
             .keys
             .phase1_verify_com_phase2_distribute(&params, &b, &c, &a, &d)

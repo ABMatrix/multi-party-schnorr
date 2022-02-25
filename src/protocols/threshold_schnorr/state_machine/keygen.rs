@@ -10,10 +10,10 @@ use curv::elliptic::curves::secp256_k1::FE;
 use curv::elliptic::curves::secp256_k1::GE;
 
 use round_based::containers::push::Push;
-use round_based::containers::{self, BroadcastMsgs, P2PMsgs, Store};
-use round_based::containers::*;
-use round_based::{IsCritical, Msg, StateMachine};
 use round_based::containers::push::PushExt;
+use round_based::containers::*;
+use round_based::containers::{self, BroadcastMsgs, P2PMsgs, Store};
+use round_based::{IsCritical, Msg, StateMachine};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -87,8 +87,8 @@ impl Keygen {
     }
 
     fn gmap_queue<'a, T, F>(&'a mut self, mut f: F) -> impl Push<Msg<T>> + 'a
-        where
-            F: FnMut(T) -> M + 'a,
+    where
+        F: FnMut(T) -> M + 'a,
     {
         (&mut self.msgs_queue).gmap(move |m: Msg<T>| m.map_body(|m| ProtocolMessage(f(m))))
     }
@@ -347,7 +347,7 @@ pub enum Error {
     HandleMessage(#[source] StoreErr),
     /// Received message which we didn't expect to receive now (e.g. message from previous round)
     #[error(
-    "didn't expect to receive message from round {msg_round} (being at round {current_round})"
+        "didn't expect to receive message from round {msg_round} (being at round {current_round})"
     )]
     ReceivedOutOfOrderMessage { current_round: u16, msg_round: u16 },
     /// [Keygen::pick_output] called twice

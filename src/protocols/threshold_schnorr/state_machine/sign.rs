@@ -10,10 +10,10 @@ use curv::elliptic::curves::secp256_k1::FE;
 use curv::elliptic::curves::secp256_k1::GE;
 
 use round_based::containers::push::Push;
-use round_based::containers::{self, BroadcastMsgs, P2PMsgs, Store};
-use round_based::containers::*;
-use round_based::{IsCritical, Msg, StateMachine};
 use round_based::containers::push::PushExt;
+use round_based::containers::*;
+use round_based::containers::{self, BroadcastMsgs, P2PMsgs, Store};
+use round_based::{IsCritical, Msg, StateMachine};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -22,8 +22,8 @@ use crate::protocols::thresholdsig::bitcoin_schnorr as party_i;
 use curv::BigInt;
 
 pub mod rounds;
-use crate::protocols::threshold_schnorr::state_machine::keygen::{LocalKey,BroadcastPhase1};
-use self::rounds::{Round0, Round1, Round2, Round4, Round3, Round5,SigRes,ProceedError};
+use self::rounds::{ProceedError, Round0, Round1, Round2, Round3, Round4, Round5, SigRes};
+use crate::protocols::threshold_schnorr::state_machine::keygen::{BroadcastPhase1, LocalKey};
 
 /// Keygen protocol state machine
 ///
@@ -72,7 +72,7 @@ impl Sign {
                 party_i: i,
                 n,
                 t: 0,
-                parties: vec![]
+                parties: vec![],
             }),
             msgs1: Some(Round1::expects_messages(i, n)),
             msgs2: Some(Round2::expects_messages(i, n)),
@@ -91,8 +91,8 @@ impl Sign {
     }
 
     fn gmap_queue<'a, T, F>(&'a mut self, mut f: F) -> impl Push<Msg<T>> + 'a
-        where
-            F: FnMut(T) -> M + 'a,
+    where
+        F: FnMut(T) -> M + 'a,
     {
         (&mut self.msgs_queue).gmap(move |m: Msg<T>| m.map_body(|m| ProtocolMessage(f(m))))
     }
@@ -481,7 +481,7 @@ pub enum Error {
     HandleMessage(#[source] StoreErr),
     /// Received message which we didn't expect to receive now (e.g. message from previous round)
     #[error(
-    "didn't expect to receive message from round {msg_round} (being at round {current_round})"
+        "didn't expect to receive message from round {msg_round} (being at round {current_round})"
     )]
     ReceivedOutOfOrderMessage { current_round: u16, msg_round: u16 },
     /// [Keygen::pick_output] called twice
@@ -555,7 +555,10 @@ mod test {
         let first = sigs[0].clone();
         assert!(sigs.iter().all(|item| item.clone() == first));
         // test the signatures pass verification
-        assert!(sigs[0].signature.verify(&msg, &parties_keys[0].public_key()).is_ok());
+        assert!(sigs[0]
+            .signature
+            .verify(&msg, &parties_keys[0].public_key())
+            .is_ok());
 
         println!("Benchmarks:");
         println!("{:#?}", sign_simulation.benchmark_results().unwrap());
