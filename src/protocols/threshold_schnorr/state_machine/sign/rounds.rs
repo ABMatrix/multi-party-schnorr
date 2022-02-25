@@ -16,18 +16,11 @@ use curv::BigInt;
 use curv::arithmetic::traits::*;
 use curv::elliptic::curves::traits::*;
 
-use crate::protocols::threshold_schnorr::state_machine::keygen::{LocalKey};
+use crate::protocols::threshold_schnorr::state_machine::keygen::{LocalKey,BroadcastPhase1};
 
 type BlindFactor = BigInt;
 type KeyGenCom = party_i::KeyGenBroadcastMessage1;
 type KeyGenDecomn = BlindFactor;
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct BroadcastPhase1 {
-    pub comm: KeyGenCom,
-    pub decom: KeyGenDecomn,
-    pub y_i: GE,
-}
 
 pub struct Round0 {
     pub private_key: LocalKey,
@@ -50,6 +43,7 @@ impl Round0 {
             comm,
             decom,
             y_i: keys.y_i,
+            index: keys.party_index
         };
 
         output.push(Msg {
@@ -96,17 +90,20 @@ impl Round1 {
             share_count: self.n.into(),
         };
         let received_decom = input.into_vec_including_me(self.mybroadcast);
-        let boardcast_received: Vec<(KeyGenCom, (KeyGenDecomn, GE))> = received_decom
+        let boardcast_received: Vec<((KeyGenCom, KeyGenDecomn), (GE,usize))> = received_decom
             .into_iter()
-            .map(|BroadcastPhase1 { comm, decom, y_i }| (comm, (decom, y_i)))
+            .map(|BroadcastPhase1 { comm, decom, y_i,index }| ((comm, decom), (y_i,index)))
             .collect();
 
-        let (a, (b, c)): (Vec<KeyGenCom>, (Vec<KeyGenDecomn>, Vec<GE>)) =
+        let ((a, b), (c,d)): ((Vec<KeyGenCom>, Vec<KeyGenDecomn>), (Vec<GE>,Vec<usize>)) =
             boardcast_received.iter().cloned().unzip();
+
+        let d: Vec<_> = d.into_iter().map(|i| usize::from(i) + 1).collect();
+        println!("{:?}",d);
 
         let (vss_scheme, secret_shares, index) = self
             .keys
-            .phase1_verify_com_phase2_distribute(&params, &b, &c, &a, &self.parties)
+            .phase1_verify_com_phase2_distribute(&params, &b, &c, &a, &d)
             .map_err(ProceedError::Round1)?;
         for (i, share) in secret_shares.iter().enumerate() {
             if i + 1 == usize::from(self.party_i) {
@@ -132,7 +129,7 @@ impl Round1 {
             party_i: self.party_i,
             t: self.t,
             n: self.n,
-            parties: self.parties,
+            parties: d,
         })
     }
     pub fn is_expensive(&self) -> bool {
@@ -171,7 +168,7 @@ impl Round2 {
         let (a, b): (Vec<VerifiableSS<GE>>, Vec<FE>) = received_data.iter().cloned().unzip();
         let shared_keys = self
             .keys
-            .phase2_verify_vss_construct_keypair(&params, &self.y_vec.clone(), &b, &a, &(self.index+1))
+            .phase2_verify_vss_construct_keypair(&params, &self.y_vec.clone(), &b, &a, &(self.index + 1))
             .map_err(ProceedError::Round2)?;
 
         let local_sig = party_i::LocalSig::compute(&self.message,
