@@ -21,7 +21,7 @@ use thiserror::Error;
 use crate::protocols::thresholdsig::bitcoin_schnorr as party_i;
 use curv::BigInt;
 
-mod rounds;
+pub mod rounds;
 pub use self::rounds::{BroadcastPhase1, LocalKey, ProceedError};
 use self::rounds::{Round0, Round1, Round2};
 

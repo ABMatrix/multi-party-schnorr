@@ -384,8 +384,9 @@ impl Round5 {
     }
 }
 
+#[derive(Clone, PartialEq)]
 pub struct SigRes{
-    signature: party_i::Signature,
+    pub signature: party_i::Signature,
 }
 
 // Errors

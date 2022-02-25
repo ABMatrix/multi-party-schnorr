@@ -258,7 +258,7 @@ impl LocalSig {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Signature {
     pub sigma: FE,
     pub v: GE,
