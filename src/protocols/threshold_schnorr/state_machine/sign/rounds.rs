@@ -31,7 +31,7 @@ impl Round0 {
     where
         O: Push<Msg<BroadcastPhase1>>,
     {
-        let keys = party_i::Keys::phase1_create(usize::from(self.party_i) - 1);
+        let keys = party_i::Keys::phase1_create(usize::from(self.private_key.party_i) - 1);
         let (comm, decom) = keys.phase1_broadcast();
 
         let mybroadcast = BroadcastPhase1 {
@@ -40,7 +40,6 @@ impl Round0 {
             y_i: keys.y_i,
             index: keys.party_index,
         };
-
         output.push(Msg {
             sender: self.party_i,
             receiver: None,
@@ -235,6 +234,7 @@ impl Round3 {
         let gamma_vec = input.into_vec_including_me(self.local_sig.clone());
         let vss_private_keys = self.private_key.clone().vss_scheme_vec;
         let vss_ephemeral_keys = self.tmpkey.clone().vss_scheme_vec;
+
         let parties_points_vec = (0..self.parties.len())
             .map(|i| self.parties[i].clone() - 1)
             .collect::<Vec<usize>>();

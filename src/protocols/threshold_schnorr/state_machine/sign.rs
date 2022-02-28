@@ -449,7 +449,7 @@ mod test {
             .map(|&i| parties_keys[usize::from(i) - 1].clone())
             .collect();
         let n = s.len() as u16;
-        for (i, key) in (1..).zip(parties_keys.clone()) {
+        for (i, key) in (1..).zip(parties_keys.clone()) { // s.to_vec().iter().zip(parties_keys.clone())
             sign_simulation.add_party(Sign::new(msg.into(), i, t, n, key).unwrap());
         }
 
@@ -472,6 +472,24 @@ mod test {
     fn simulate_sign_t1_n2() {
         let msg = b"~~ MESSAGE ~~";
         simulate_sign(&msg[..], &[1, 2, 3], 2, 4);
+    }
+
+    #[test]
+    fn simulate_sign_t4_n8() {
+        let msg = b"~~ MESSAGE ~~";
+        simulate_sign(&msg[..], &[1, 3, 5, 6, 7], 4, 8);
+    }
+
+    #[test]
+    fn simulate_sign_t3_n9() {
+        let msg = b"~~ MESSAGE ~~";
+        simulate_sign(&msg[..], &[ 3, 5, 6, 7], 3, 9);
+    }
+
+    #[test]
+    fn simulate_sign_t3_n9_r() {
+        let msg = b"~~ MESSAGE ~~";
+        simulate_sign(&msg[..], &[ 8, 4, 2, 1], 3, 9);
     }
 
     #[test]
