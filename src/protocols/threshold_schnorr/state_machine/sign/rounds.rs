@@ -295,8 +295,4 @@ pub enum ProceedError {
     Round2(crate::Error),
     #[error("round 3: verify_vss_construct : {0:?}")]
     Round3(crate::Error),
-    #[error("round 4: verify_vss_construct : {0:?}")]
-    Round4(crate::Error),
-    #[error("round 5: verify_vss_construct : {0:?}")]
-    Round5(crate::Error),
 }
