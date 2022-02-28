@@ -21,6 +21,7 @@ use crate::protocols::threshold_schnorr::state_machine::keygen::{BroadcastPhase1
 type BlindFactor = BigInt;
 type KeyGenCom = party_i::KeyGenBroadcastMessage1;
 type KeyGenDecomn = BlindFactor;
+use Error::{InvalidSig, InvalidSS};
 
 pub struct Round0 {
     pub private_key: LocalKey,
@@ -106,7 +107,6 @@ impl Round1 {
             boardcast_received.iter().cloned().unzip();
 
         let d: Vec<_> = d.into_iter().map(|i| usize::from(i) + 1).collect();
-        println!("{:?}", d);
 
         let (vss_scheme, secret_shares, index) = self
             .keys
@@ -237,163 +237,28 @@ pub struct Round3 {
 }
 
 impl Round3 {
-    pub fn proceed<O>(
-        self,
-        input: BroadcastMsgs<party_i::LocalSig>,
-        mut output: O,
-    ) -> Result<Round4>
-    where
-        O: Push<Msg<GE>>,
+    pub fn proceed(self, input: BroadcastMsgs<party_i::LocalSig>, ) -> Result<SigRes>
     {
         let gamma_vec = input.into_vec_including_me(self.local_sig.clone());
-
         let vss_private_keys = self.private_key.clone().vss_scheme_vec;
         let vss_ephemeral_keys = self.tmpkey.clone().vss_scheme_vec;
-        let i = usize::from(self.party_i) - 1;
-
-        println!("{:?} {:?} ",vss_private_keys.len(),vss_ephemeral_keys.len());
-
-        println!("{:?} {:?} ",vss_private_keys[0].commitments.len(),vss_ephemeral_keys[0].commitments.len());
-
-        let mut key_gen_comm_i_vec = (0..vss_private_keys.len())
-            .map(|j| vss_private_keys[j].commitments[i].clone() * &gamma_vec[i].e)
-            .collect::<Vec<GE>>();
-        let mut eph_comm_i_vec = (0..vss_ephemeral_keys.len())
-            .map(|j| vss_ephemeral_keys[j].commitments[i].clone())
-            .collect::<Vec<GE>>();
-        key_gen_comm_i_vec.append(&mut eph_comm_i_vec);
-        let mut comm_i_vec_iter = key_gen_comm_i_vec.iter();
-        let comm_i_0 = comm_i_vec_iter.next().unwrap();
-        let comm_to_broadcast = comm_i_vec_iter.fold(comm_i_0.clone(), |acc, x| acc + x);
-
-        output.push(Msg {
-            sender: self.party_i,
-            receiver: None,
-            body: comm_to_broadcast.clone(),
-        });
-
-        Ok(Round4 {
-            tmpkey: self.tmpkey,
-            local_sig: self.local_sig,
-            y_vec: self.y_vec,
-            comm: comm_to_broadcast,
-            local_sig_vec: gamma_vec,
-
-            private_key: self.private_key,
-            message: self.message,
-            party_i: self.party_i,
-            t: self.t,
-            n: self.n,
-            parties: self.parties,
-        })
-    }
-
-    pub fn is_expensive(&self) -> bool {
-        true
-    }
-    pub fn expects_messages(i: u16, n: u16) -> Store<BroadcastMsgs<party_i::LocalSig>> {
-        containers::BroadcastMsgsStore::new(i, n)
-    }
-}
-
-pub struct Round4 {
-    tmpkey: LocalKey,
-    local_sig: party_i::LocalSig,
-    y_vec: Vec<GE>,
-    comm: GE,
-    local_sig_vec: Vec<party_i::LocalSig>,
-
-    private_key: LocalKey,
-    message: Vec<u8>,
-    party_i: u16,
-    t: u16,
-    n: u16,
-    parties: Vec<usize>,
-}
-
-impl Round4 {
-    pub fn proceed<O>(self, input: BroadcastMsgs<GE>, mut output: O) -> Result<Round5>
-    where
-        O: Push<Msg<bool>>,
-    {
-        let comm_vec = input.into_vec_including_me(self.comm);
-
-        let vss_sum = VerifiableSS {
-            parameters: self.private_key.vss_scheme.parameters.clone(),
-            commitments: comm_vec,
-        };
-
-        let gamma_i_g = &GE::generator() * &self.local_sig.gamma_i;
-        let validate_result = vss_sum
-            .validate_share_public(&gamma_i_g, usize::from(self.party_i))
-            .is_ok();
-
-        output.push(Msg {
-            sender: self.party_i,
-            receiver: None,
-            body: validate_result,
-        });
-
-        Ok(Round5 {
-            tmpkey: self.tmpkey,
-            local_sig: self.local_sig,
-            y_vec: self.y_vec,
-            own_result: validate_result,
-            local_sig_vec: self.local_sig_vec,
-            vss_sum,
-
-            private_key: self.private_key,
-            message: self.message,
-            party_i: self.party_i,
-            t: self.t,
-            n: self.n,
-            parties: self.parties,
-        })
-    }
-
-    pub fn is_expensive(&self) -> bool {
-        true
-    }
-    pub fn expects_messages(i: u16, n: u16) -> Store<BroadcastMsgs<GE>> {
-        containers::BroadcastMsgsStore::new(i, n)
-    }
-}
-
-pub struct Round5 {
-    tmpkey: LocalKey,
-    local_sig: party_i::LocalSig,
-    y_vec: Vec<GE>,
-    own_result: bool,
-    local_sig_vec: Vec<party_i::LocalSig>,
-    vss_sum: VerifiableSS<GE>,
-
-    private_key: LocalKey,
-    message: Vec<u8>,
-    party_i: u16,
-    t: u16,
-    n: u16,
-    parties: Vec<usize>,
-}
-
-impl Round5 {
-    pub fn proceed(self, input: BroadcastMsgs<bool>) -> Result<SigRes> {
-        let params = party_i::Parameters {
-            threshold: self.t.into(),
-            share_count: self.n.into(),
-        };
-        let comm_vec = input.into_vec_including_me(self.own_result);
-        use Error::InvalidSig;
-        let res = comm_vec.iter().all(|x| x.clone() == true);
-        if res == false {
-            return Err(ProceedError::Round5(InvalidSig));
-        }
-
-        let signature = party_i::Signature::generate(
-            &self.vss_sum,
-            &self.local_sig_vec,
-            &self.parties,
-            self.tmpkey.public_key(),
+        let parties_points_vec = (0..self.parties.len())
+            .map(|i| self.parties[i].clone() - 1)
+            .collect::<Vec<usize>>();
+        let verify_local_sig = party_i::LocalSig::verify_local_sigs(
+            &gamma_vec,
+            &parties_points_vec,
+            &vss_private_keys,
+            &vss_ephemeral_keys,
         );
+        if verify_local_sig.is_ok() == false{
+            return return Err(ProceedError::Round3(InvalidSS));
+        }
+        let vss_sum_local_sigs = verify_local_sig.unwrap();
+        let signature = party_i::Signature::generate(&vss_sum_local_sigs
+                                                     , &gamma_vec
+                                                     , &parties_points_vec
+                                                     , self.tmpkey.public_key());
 
         Ok(SigRes { signature })
     }
@@ -401,7 +266,7 @@ impl Round5 {
     pub fn is_expensive(&self) -> bool {
         true
     }
-    pub fn expects_messages(i: u16, n: u16) -> Store<BroadcastMsgs<bool>> {
+    pub fn expects_messages(i: u16, n: u16) -> Store<BroadcastMsgs<party_i::LocalSig>> {
         containers::BroadcastMsgsStore::new(i, n)
     }
 }

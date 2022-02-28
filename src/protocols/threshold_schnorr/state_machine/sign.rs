@@ -22,7 +22,7 @@ use crate::protocols::thresholdsig::bitcoin_schnorr as party_i;
 use curv::BigInt;
 
 pub mod rounds;
-use self::rounds::{ProceedError, Round0, Round1, Round2, Round3, Round4, Round5, SigRes};
+use self::rounds::{ProceedError, Round0, Round1, Round2, Round3, SigRes};
 use crate::protocols::threshold_schnorr::state_machine::keygen::{BroadcastPhase1, LocalKey};
 
 /// Keygen protocol state machine
@@ -35,8 +35,6 @@ pub struct Sign {
     msgs1: Option<Store<BroadcastMsgs<BroadcastPhase1>>>,
     msgs2: Option<Store<P2PMsgs<(VerifiableSS<GE>, FE)>>>,
     msgs3: Option<Store<BroadcastMsgs<party_i::LocalSig>>>,
-    msgs4: Option<Store<BroadcastMsgs<GE>>>,
-    msgs5: Option<Store<BroadcastMsgs<bool>>>,
 
     msgs_queue: Vec<Msg<ProtocolMessage>>,
 
@@ -77,8 +75,6 @@ impl Sign {
             msgs1: Some(Round1::expects_messages(i, n)),
             msgs2: Some(Round2::expects_messages(i, n)),
             msgs3: Some(Round3::expects_messages(i, n)),
-            msgs4: Some(Round4::expects_messages(i, n)),
-            msgs5: Some(Round5::expects_messages(i, n)),
 
             msgs_queue: vec![],
 
@@ -101,8 +97,6 @@ impl Sign {
         let store1_wants_more = self.msgs1.as_ref().map(|s| s.wants_more()).unwrap_or(false);
         let store2_wants_more = self.msgs2.as_ref().map(|s| s.wants_more()).unwrap_or(false);
         let store3_wants_more = self.msgs3.as_ref().map(|s| s.wants_more()).unwrap_or(false);
-        let store4_wants_more = self.msgs4.as_ref().map(|s| s.wants_more()).unwrap_or(false);
-        let store5_wants_more = self.msgs5.as_ref().map(|s| s.wants_more()).unwrap_or(false);
 
         let next_state: R;
         let try_again: bool = match replace(&mut self.round, R::Gone) {
@@ -153,42 +147,12 @@ impl Sign {
                     .finish()
                     .map_err(InternalError::RetrieveRoundMessages)?;
                 next_state = round
-                    .proceed(msgs, self.gmap_queue(M::Round4))
-                    .map(R::Round4)
-                    .map_err(Error::ProceedRound)?;
-                true
-            }
-            s @ R::Round3(_) => {
-                next_state = s;
-                false
-            }
-            R::Round4(round) if !store4_wants_more && (!round.is_expensive() || may_block) => {
-                let store = self.msgs4.take().ok_or(InternalError::StoreGone)?;
-                let msgs = store
-                    .finish()
-                    .map_err(InternalError::RetrieveRoundMessages)?;
-                next_state = round
-                    .proceed(msgs, self.gmap_queue(M::Round5))
-                    .map(R::Round5)
-                    .map_err(Error::ProceedRound)?;
-                true
-            }
-            s @ R::Round4(_) => {
-                next_state = s;
-                false
-            }
-            R::Round5(round) if !store5_wants_more && (!round.is_expensive() || may_block) => {
-                let store = self.msgs5.take().ok_or(InternalError::StoreGone)?;
-                let msgs = store
-                    .finish()
-                    .map_err(InternalError::RetrieveRoundMessages)?;
-                next_state = round
                     .proceed(msgs)
                     .map(R::Final)
                     .map_err(Error::ProceedRound)?;
                 true
             }
-            s @ R::Round5(_) => {
+            s @ R::Round3(_) => {
                 next_state = s;
                 false
             }
@@ -267,40 +231,6 @@ impl StateMachine for Sign {
                     .map_err(Error::HandleMessage)?;
                 self.proceed_round(false)
             }
-            ProtocolMessage(M::Round4(m)) => {
-                let store = self
-                    .msgs4
-                    .as_mut()
-                    .ok_or(Error::ReceivedOutOfOrderMessage {
-                        current_round,
-                        msg_round: 4,
-                    })?;
-                store
-                    .push_msg(Msg {
-                        sender: msg.sender,
-                        receiver: msg.receiver,
-                        body: m,
-                    })
-                    .map_err(Error::HandleMessage)?;
-                self.proceed_round(false)
-            }
-            ProtocolMessage(M::Round5(m)) => {
-                let store = self
-                    .msgs5
-                    .as_mut()
-                    .ok_or(Error::ReceivedOutOfOrderMessage {
-                        current_round,
-                        msg_round: 5,
-                    })?;
-                store
-                    .push_msg(Msg {
-                        sender: msg.sender,
-                        receiver: msg.receiver,
-                        body: m,
-                    })
-                    .map_err(Error::HandleMessage)?;
-                self.proceed_round(false)
-            }
         }
     }
 
@@ -312,16 +242,12 @@ impl StateMachine for Sign {
         let store1_wants_more = self.msgs1.as_ref().map(|s| s.wants_more()).unwrap_or(false);
         let store2_wants_more = self.msgs2.as_ref().map(|s| s.wants_more()).unwrap_or(false);
         let store3_wants_more = self.msgs2.as_ref().map(|s| s.wants_more()).unwrap_or(false);
-        let store4_wants_more = self.msgs2.as_ref().map(|s| s.wants_more()).unwrap_or(false);
-        let store5_wants_more = self.msgs2.as_ref().map(|s| s.wants_more()).unwrap_or(false);
 
         match &self.round {
             R::Round0(_) => true,
             R::Round1(_) => !store1_wants_more,
             R::Round2(_) => !store2_wants_more,
             R::Round3(_) => !store3_wants_more,
-            R::Round4(_) => !store4_wants_more,
-            R::Round5(_) => !store5_wants_more,
             R::Final(_) | R::Gone => false,
         }
     }
@@ -361,14 +287,12 @@ impl StateMachine for Sign {
             R::Round1(_) => 1,
             R::Round2(_) => 2,
             R::Round3(_) => 3,
-            R::Round4(_) => 4,
-            R::Round5(_) => 5,
             R::Final(_) | R::Gone => 6,
         }
     }
 
     fn total_rounds(&self) -> Option<u16> {
-        Some(5)
+        Some(3)
     }
 
     fn party_ind(&self) -> u16 {
@@ -387,8 +311,6 @@ impl fmt::Debug for Sign {
             R::Round1(_) => "1",
             R::Round2(_) => "2",
             R::Round3(_) => "3",
-            R::Round4(_) => "4",
-            R::Round5(_) => "6",
             R::Final(_) => "[Final]",
             R::Gone => "[Gone]",
         };
@@ -404,23 +326,13 @@ impl fmt::Debug for Sign {
             Some(msgs) => format!("[{}/{}]", msgs.messages_received(), msgs.messages_total()),
             None => "[None]".into(),
         };
-        let msgs4 = match self.msgs4.as_ref() {
-            Some(msgs) => format!("[{}/{}]", msgs.messages_received(), msgs.messages_total()),
-            None => "[None]".into(),
-        };
-        let msgs5 = match self.msgs5.as_ref() {
-            Some(msgs) => format!("[{}/{}]", msgs.messages_received(), msgs.messages_total()),
-            None => "[None]".into(),
-        };
         write!(
             f,
-            "{{MPCRandom at round={} msgs1={} msgs2={} msgs3={} msgs4={} msgs5={} queue=[len={}]}}",
+            "{{MPCRandom at round={} msgs1={} msgs2={} msgs3={} queue=[len={}]}}",
             current_round,
             msgs1,
             msgs2,
             msgs3,
-            msgs4,
-            msgs5,
             self.msgs_queue.len()
         )
     }
@@ -431,8 +343,6 @@ enum R {
     Round1(Round1),
     Round2(Round2),
     Round3(Round3),
-    Round4(Round4),
-    Round5(Round5),
     Final(SigRes),
     Gone,
 }
@@ -450,8 +360,6 @@ enum M {
     Round1(BroadcastPhase1),
     Round2((VerifiableSS<GE>, FE)),
     Round3(party_i::LocalSig),
-    Round4(GE),
-    Round5(bool),
 }
 
 // Error
@@ -567,7 +475,7 @@ mod test {
     #[test]
     fn simulate_sign_t1_n2() {
         let msg = b"~~ MESSAGE ~~";
-        simulate_sign(&msg[..], &[1, 2, 3], 2, 5);
+        simulate_sign(&msg[..], &[1, 2, 3], 2, 4);
     }
 
     #[test]
