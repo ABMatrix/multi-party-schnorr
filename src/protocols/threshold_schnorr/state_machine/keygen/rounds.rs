@@ -103,7 +103,6 @@ impl Round1 {
             boardcast_received.iter().cloned().unzip();
 
         let d: Vec<_> = d.into_iter().map(|i| usize::from(i) + 1).collect();
-        println!("{:?}", d);
         let (vss_scheme, secret_shares, index) = self
             .keys
             .phase1_verify_com_phase2_distribute(&params, &b, &c, &a, &d)

@@ -21,7 +21,7 @@ use crate::protocols::threshold_schnorr::state_machine::keygen::{BroadcastPhase1
 type BlindFactor = BigInt;
 type KeyGenCom = party_i::KeyGenBroadcastMessage1;
 type KeyGenDecomn = BlindFactor;
-use Error::{InvalidSig, InvalidSS};
+use Error::{InvalidSS, InvalidSig};
 
 pub struct Round0 {
     pub private_key: LocalKey,
@@ -237,8 +237,7 @@ pub struct Round3 {
 }
 
 impl Round3 {
-    pub fn proceed(self, input: BroadcastMsgs<party_i::LocalSig>, ) -> Result<SigRes>
-    {
+    pub fn proceed(self, input: BroadcastMsgs<party_i::LocalSig>) -> Result<SigRes> {
         let gamma_vec = input.into_vec_including_me(self.local_sig.clone());
         let vss_private_keys = self.private_key.clone().vss_scheme_vec;
         let vss_ephemeral_keys = self.tmpkey.clone().vss_scheme_vec;
@@ -251,14 +250,16 @@ impl Round3 {
             &vss_private_keys,
             &vss_ephemeral_keys,
         );
-        if verify_local_sig.is_ok() == false{
+        if verify_local_sig.is_ok() == false {
             return return Err(ProceedError::Round3(InvalidSS));
         }
         let vss_sum_local_sigs = verify_local_sig.unwrap();
-        let signature = party_i::Signature::generate(&vss_sum_local_sigs
-                                                     , &gamma_vec
-                                                     , &parties_points_vec
-                                                     , self.tmpkey.public_key());
+        let signature = party_i::Signature::generate(
+            &vss_sum_local_sigs,
+            &gamma_vec,
+            &parties_points_vec,
+            self.tmpkey.public_key(),
+        );
 
         Ok(SigRes { signature })
     }

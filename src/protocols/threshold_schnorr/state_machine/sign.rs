@@ -53,7 +53,7 @@ impl Sign {
     /// * `n` is less than 2, returns [Error::TooFewParties]
     /// * `t` is not in range `[1; n-1]`, returns [Error::InvalidThreshold]
     /// * `i` is not in range `[1; n]`, returns [Error::InvalidPartyIndex]
-    pub fn new(message: Vec<u8>, i: u16, t:u16, n: u16, local_key: LocalKey) -> Result<Self> {
+    pub fn new(message: Vec<u8>, i: u16, t: u16, n: u16, local_key: LocalKey) -> Result<Self> {
         if n < local_key.t + 1 {
             return Err(Error::TooFewParties);
         }
