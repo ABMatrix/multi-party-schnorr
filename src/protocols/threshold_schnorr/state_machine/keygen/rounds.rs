@@ -1,7 +1,4 @@
-use curv::cryptographic_primitives::proofs::sigma_dlog::DLogProof;
-use curv::cryptographic_primitives::secret_sharing::feldman_vss::{
-    ShamirSecretSharing, VerifiableSS,
-};
+use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
 use curv::elliptic::curves::secp256_k1::FE;
 use curv::elliptic::curves::secp256_k1::GE;
 

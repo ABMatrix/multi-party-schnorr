@@ -2,24 +2,20 @@ use std::fmt;
 use std::mem::replace;
 use std::time::Duration;
 
-use curv::cryptographic_primitives::proofs::sigma_dlog::DLogProof;
-use curv::cryptographic_primitives::secret_sharing::feldman_vss::{
-    ShamirSecretSharing, VerifiableSS,
-};
+use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
 use curv::elliptic::curves::secp256_k1::FE;
 use curv::elliptic::curves::secp256_k1::GE;
 
 use round_based::containers::push::Push;
 use round_based::containers::push::PushExt;
 use round_based::containers::*;
-use round_based::containers::{self, BroadcastMsgs, P2PMsgs, Store};
+use round_based::containers::{BroadcastMsgs, P2PMsgs, Store};
 use round_based::{IsCritical, Msg, StateMachine};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::protocols::thresholdsig::bitcoin_schnorr as party_i;
-use curv::BigInt;
 
 pub mod rounds;
 use self::rounds::{ProceedError, Round0, Round1, Round2, Round3, SigRes};

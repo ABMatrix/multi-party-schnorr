@@ -1,19 +1,13 @@
-use curv::cryptographic_primitives::proofs::sigma_dlog::DLogProof;
-use curv::cryptographic_primitives::secret_sharing::feldman_vss::{
-    ShamirSecretSharing, VerifiableSS,
-};
+use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
 use curv::elliptic::curves::secp256_k1::FE;
 use curv::elliptic::curves::secp256_k1::GE;
 
 use round_based::containers::push::Push;
 use round_based::containers::{self, BroadcastMsgs, P2PMsgs, Store};
 use round_based::Msg;
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::protocols::thresholdsig::bitcoin_schnorr as party_i;
-use curv::arithmetic::traits::*;
-use curv::elliptic::curves::traits::*;
 use curv::BigInt;
 
 use crate::protocols::threshold_schnorr::state_machine::keygen::{BroadcastPhase1, LocalKey};
@@ -251,7 +245,7 @@ impl Round3 {
             &vss_ephemeral_keys,
         );
         if verify_local_sig.is_ok() == false {
-            return return Err(ProceedError::Round3(InvalidSS));
+            return Err(ProceedError::Round3(InvalidSS));
         }
         let vss_sum_local_sigs = verify_local_sig.unwrap();
         let signature = party_i::Signature::generate(
